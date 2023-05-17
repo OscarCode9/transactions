@@ -8,4 +8,8 @@ RUN yarn install --network-timeout 100000
 
 COPY . .
 
-CMD ["yarn","start:dev"]
+EXPOSE 3003
+
+
+CMD [ "yarn","start:dev"]
+

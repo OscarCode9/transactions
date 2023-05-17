@@ -1,18 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { CreateTransactionInput } from './dto/create-transaction.input';
 import { UpdateTransactionInput } from './dto/update-transaction.input';
-import { Transaction as Trx, } from '@prisma/client';
+import { Transaction as Trx } from '@prisma/client';
 import { Transaction } from './entities/transaction.entity';
-import { PrismaService } from '../prisma.service';
-
+import { PrismaService } from '../prisma/prisma.service';
+import { ClientKafka } from '@nestjs/microservices';
+import { logger } from 'src/datadog';
 
 @Injectable()
 export class TransactionService {
-
-  constructor(private prisma: PrismaService) {}
-
-  async create(createTransactionInput: CreateTransactionInput): Promise<Transaction | null> {
-    console.log(createTransactionInput)
+  constructor(
+    private prisma: PrismaService,
+    @Inject('kafk_client_transaction') private readonly client: ClientKafka,
+  ) {}
+  async create(
+    createTransactionInput: CreateTransactionInput,
+  ): Promise<Transaction | null> {
     function createFakeTransaction() {
       const transaction = {
         transactionExternalId: generateRandomId(),
@@ -24,26 +27,26 @@ export class TransactionService {
         transactionStatus: generateRandomWord(),
         createdAt: generateRandomDate(),
       };
-    
+
       return transaction;
     }
-    
+
     function generateRandomId() {
       // Genera un ID único, por ejemplo utilizando un algoritmo como cuid()
       // Puedes implementar tu propio generador de IDs únicos
       return 'fake-id-' + Math.random().toString(36).substring(7);
     }
-    
+
     function generateRandomNumber() {
       // Genera un número aleatorio
-      return Math.floor(Math.random() * 1000);
+      return Math.floor(Math.random() * 10000);
     }
-    
+
     function generateRandomWord() {
       // Genera una palabra aleatoria
       return Math.random().toString(36).substring(7);
     }
-    
+
     function generateRandomDate() {
       // Genera una fecha aleatoria en el rango de los últimos 10 años
       const currentDate = new Date();
@@ -56,14 +59,14 @@ export class TransactionService {
       const randomTimestamp =
         startDate.getTime() +
         Math.random() * (endDate.getTime() - startDate.getTime());
-    
+
       return new Date(randomTimestamp);
     }
-    
-    const transaction = createFakeTransaction();
-    console.log(transaction)
+
+    createTransactionInput = createFakeTransaction();
+    console.log(createTransactionInput);
     const result = await this.prisma.transaction.create({
-      data: transaction,
+      data: createTransactionInput,
     });
 
     const response: Transaction = {
@@ -76,26 +79,30 @@ export class TransactionService {
       transactionStatus: result.transactionStatus,
     };
 
+    this.client.emit('transactions.created', JSON.stringify(response));
     return response;
   }
 
-  findAll() {
-    return `This action returns all transaction`;
-  }
-
-  findOne(id: number) {
-    return `This action returns a #${id} transaction`;
-  }
-
-  update(id: number, updateTransactionInput: UpdateTransactionInput) {
-    return updateTransactionInput;
-  }
-
-  remove(id: number) {
-    console.log('remove');
-    return {
-      status: 'ok',
-      id,
+  async getById(id: string) {
+    logger.log('info', { type: 'getById', id });
+    const result = await this.prisma.transaction.findUnique({
+      where: {
+        transactionExternalId: id,
+      },
+    });
+    console.log('results', result);
+    const response: Transaction = {
+      accountExternalIdDebit: result.accountExternalIdDebit,
+      accountExternalIdCredit: result.accountExternalIdCredit,
+      tranferTypeId: result.tranferTypeId,
+      value: result.value,
+      transactionExternalId: result.transactionExternalId,
+      transactionType: result.transactionType,
+      transactionStatus: result.transactionStatus,
+      createdAt: result.createdAt,
     };
+    logger.log('info', response);
+    console.log(response);
+    return response;
   }
 }
